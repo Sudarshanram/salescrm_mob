@@ -20,6 +20,7 @@ import {
   Plus,
   Phone,
   Calendar as CalendarIcon,
+  Clock,
   User,
   Users,
   Pencil,
@@ -43,6 +44,11 @@ import {
   MoreVertical,
   Contact,
   History,
+  Menu,
+  FolderOpen,
+  DollarSign,
+  BarChart2,
+  Bell,
 } from 'lucide-react-native';
 import { useLeads, Lead, LeadStatus } from '@/context/leads-context';
 
@@ -63,6 +69,10 @@ export default function LeadsScreen() {
 
   // Navigation State
   const [currentView, setCurrentView] = useState<'leads-list' | 'add-lead' | 'edit-lead' | 'lead-details'>('leads-list');
+
+  // Hamburger Menu State
+  const [showMenu, setShowMenu] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
 
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState('');
@@ -150,6 +160,9 @@ export default function LeadsScreen() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showApptModal, setShowApptModal] = useState(false);
+  const [showApptFixedModal, setShowApptFixedModal] = useState(false);
+  const [apptTime, setApptTime] = useState('');
+  const [apptAddress, setApptAddress] = useState('');
   const [showQuoteModal, setShowQuoteModal] = useState(false);
   
   // Status Change Remark States
@@ -189,6 +202,10 @@ export default function LeadsScreen() {
   const [quoteTitle, setQuoteTitle] = useState('');
   const [quoteAmount, setQuoteAmount] = useState('');
   const [quoteNotes, setQuoteNotes] = useState('');
+  const [showGenQuoteModal, setShowGenQuoteModal] = useState(false);
+  const [quoteGst, setQuoteGst] = useState('');
+  const [quoteService, setQuoteService] = useState('PEB');
+  const [showQuoteServiceDropdown, setShowQuoteServiceDropdown] = useState(false);
 
   // Custom Log State
   const [customLogText, setCustomLogText] = useState('');
@@ -478,6 +495,83 @@ export default function LeadsScreen() {
     setShowApptModal(false);
   };
 
+  const handleConfirmApptFixed = async () => {
+    if (!activeLead) return;
+    if (!apptDate || !apptTime) {
+      Alert.alert('Missing Fields', 'Please specify Date and Time.');
+      return;
+    }
+
+    await addAppointment({
+      leadId: activeLead.id,
+      leadName: activeLead.name,
+      title: 'Appointment Fixed',
+      dateTime: `${apptDate}, ${apptTime}`,
+      notes: apptAddress ? `${apptAddress}\n${apptNotes}` : apptNotes,
+    });
+
+    setFormStatus('appt_fixed');
+
+    const remarkMsg = `Appointment fixed for ${apptDate} at ${apptTime}. Location: ${apptAddress || 'Main Office'}. Notes: ${apptNotes || 'None'}`;
+    await addLeadHistory(
+      activeLead.id,
+      'appt_fixed',
+      'Lead status changed to APPT FIXED',
+      remarkMsg
+    );
+
+    setShowApptFixedModal(false);
+    Alert.alert('Success', 'Appointment fixed and status updated successfully.');
+  };
+
+  const handleConfirmQuotationSend = async (isOwn: boolean = false) => {
+    if (!activeLead) return;
+    if (!quoteAmount) {
+      Alert.alert('Missing Fields', 'Please specify the Quotation Amount.');
+      return;
+    }
+
+    const amountNum = parseFloat(quoteAmount.replace(/,/g, ''));
+    if (isNaN(amountNum)) {
+      Alert.alert('Invalid Amount', 'Please input a valid numeric amount.');
+      return;
+    }
+
+    const gstNum = parseFloat(quoteGst.replace(/,/g, '')) || 0;
+
+    const todayStr = new Date().toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+
+    const serviceName = quoteService || activeLead.category;
+    const titleVal = isOwn ? 'Own Quotation' : `${serviceName} Quotation`;
+
+    await addQuotation({
+      leadId: activeLead.id,
+      leadName: activeLead.name,
+      title: titleVal,
+      amount: amountNum + gstNum,
+      dateTime: todayStr,
+      status: 'sent',
+      notes: `Service: ${serviceName}\nBase Amount: ₹${amountNum.toLocaleString('en-IN')}\nGST: ₹${gstNum.toLocaleString('en-IN')}\nType: ${isOwn ? 'Own' : 'Generated'}\n${quoteNotes}`,
+    });
+
+    setFormStatus('quotation_send');
+
+    const remarkMsg = `${isOwn ? 'Own quotation logged' : 'Quotation generated'} for ${serviceName}. Amount: ₹${amountNum.toLocaleString('en-IN')} (GST: ₹${gstNum.toLocaleString('en-IN')}). Notes: ${quoteNotes || 'None'}`;
+    await addLeadHistory(
+      activeLead.id,
+      'quotation_send',
+      'Lead status changed to QUOTATION SEND',
+      remarkMsg
+    );
+
+    setShowGenQuoteModal(false);
+    Alert.alert('Success', 'Quotation details saved successfully.');
+  };
+
   // Action: Add Quotation
   const handleAddQuotation = async () => {
     if (!activeLead) return;
@@ -641,8 +735,29 @@ export default function LeadsScreen() {
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Edit Lead</Text>
           </View>
-          <TouchableOpacity style={styles.searchIconBtn}>
-            <MoreVertical size={20} color="#1e1b4b" />
+          <TouchableOpacity 
+            style={styles.searchIconBtn}
+            onPress={() => {
+              if (activeLead) {
+                Alert.alert(
+                  'Delete Lead', 
+                  'Are you sure you want to permanently delete this lead?',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Delete',
+                      style: 'destructive',
+                      onPress: async () => {
+                        await deleteLead(activeLead.id);
+                        setCurrentView('leads-list');
+                        setActiveLeadId(null);
+                      }
+                    }
+                  ]
+                );
+              }
+            }}>
+            <MoreVertical size={20} color="#ef4444" />
           </TouchableOpacity>
         </View>
 
@@ -759,7 +874,24 @@ export default function LeadsScreen() {
                       key={statusKey}
                       style={styles.dropdownItem}
                       onPress={() => {
-                        setFormStatus(statusKey as LeadStatus);
+                        if (statusKey !== formStatus) {
+                          if (statusKey === 'appt_fixed') {
+                            setApptDate('');
+                            setApptTime('');
+                            setApptAddress(activeLead ? activeLead.notes || '' : '');
+                            setApptNotes('');
+                            setShowApptFixedModal(true);
+                          } else if (statusKey === 'quotation_send') {
+                            setQuoteAmount('');
+                            setQuoteGst('');
+                            setQuoteService(activeLead ? activeLead.category : 'PEB');
+                            setShowGenQuoteModal(true);
+                          } else {
+                            setPendingStatus(statusKey as LeadStatus);
+                            setStatusRemarkText('');
+                            setShowStatusRemarkModal(true);
+                          }
+                        }
                         setShowEditStatusDropdown(false);
                       }}>
                       <Text style={styles.dropdownItemText}>
@@ -825,7 +957,7 @@ export default function LeadsScreen() {
                 resetLeadForm();
                 setCurrentView('lead-details');
               }}>
-              <Text style={styles.cancelBtnText}>Cancel</Text>
+                <Text style={styles.cancelBtnText}>Cancel</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.updateBtnFilled} onPress={handleEditLead}>
@@ -833,6 +965,325 @@ export default function LeadsScreen() {
             </TouchableOpacity>
           </View>
         </ScrollView>
+
+        {/* ================= STATUS CHANGE REMARK MODAL ================= */}
+        <Modal visible={showStatusRemarkModal} animationType="fade" transparent>
+          <View style={styles.modalOverlayCenter}>
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              style={styles.modalContentCenter}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Add Status Remark</Text>
+                <TouchableOpacity onPress={() => setShowStatusRemarkModal(false)}>
+                  <X size={24} color="#475569" />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.formContainer}>
+                <Text style={{ fontSize: 14, color: '#475569', marginBottom: 12, lineHeight: 20 }}>
+                  Please add a remark/note for changing status to:{' '}
+                  <Text style={{ fontWeight: '700', color: pendingStatus ? statusStyles[pendingStatus].text : '#110e3d' }}>
+                    {pendingStatus ? statusStyles[pendingStatus].label : ''}
+                  </Text>
+                </Text>
+
+                <TextInput
+                  value={statusRemarkText}
+                  onChangeText={setStatusRemarkText}
+                  placeholder="Write remark here..."
+                  placeholderTextColor="#94a3b8"
+                  multiline
+                  numberOfLines={3}
+                  style={[styles.input, styles.multilineInput, { height: 80, marginBottom: 16 }]}
+                />
+
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
+                  <TouchableOpacity
+                    style={[styles.submitBtn, { flex: 1, backgroundColor: '#f1f0f5', borderWidth: 0 }]}
+                    onPress={() => setShowStatusRemarkModal(false)}>
+                    <Text style={{ color: '#475569', fontWeight: '600' }}>Cancel</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.submitBtn, { flex: 1.2, backgroundColor: '#4c49ed' }]}
+                    onPress={() => {
+                      if (pendingStatus) {
+                        setFormStatus(pendingStatus);
+                      }
+                      setShowStatusRemarkModal(false);
+                    }}>
+                    <Text style={{ color: '#ffffff', fontWeight: '600' }}>Save Remark</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </KeyboardAvoidingView>
+          </View>
+        </Modal>
+
+        {/* ================= SCHEDULE APPOINTMENT FIXED OVERLAY MODAL ================= */}
+        <Modal visible={showApptFixedModal} animationType="fade" transparent>
+          <View style={styles.modalOverlayCenter}>
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              style={styles.modalContentCenter}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Schedule Appointment</Text>
+                <TouchableOpacity onPress={() => setShowApptFixedModal(false)}>
+                  <X size={24} color="#475569" />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.formContainer}>
+                
+                {/* Appointment Date and Time in Row */}
+                <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.label, { marginTop: 0 }]}>Appointment Date</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, paddingHorizontal: 12, height: 44 }}>
+                      <TextInput
+                        value={apptDate}
+                        onChangeText={setApptDate}
+                        placeholder="mm/dd/yyyy"
+                        placeholderTextColor="#94a3b8"
+                        style={{ flex: 1, height: '100%', fontSize: 14, color: '#110e3d', borderWidth: 0, outlineStyle: 'none' }}
+                      />
+                      <CalendarIcon size={16} color="#64748b" />
+                    </View>
+                  </View>
+
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.label, { marginTop: 0 }]}>Meeting timing (Time)</Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, paddingHorizontal: 12, height: 44 }}>
+                      <TextInput
+                        value={apptTime}
+                        onChangeText={setApptTime}
+                        placeholder="--:-- --"
+                        placeholderTextColor="#94a3b8"
+                        style={{ flex: 1, height: '100%', fontSize: 14, color: '#110e3d', borderWidth: 0, outlineStyle: 'none' }}
+                      />
+                      <Clock size={16} color="#64748b" />
+                    </View>
+                  </View>
+                </View>
+
+                {/* Location / Address */}
+                <Text style={styles.label}>Location / Address</Text>
+                <TextInput
+                  value={apptAddress}
+                  onChangeText={setApptAddress}
+                  placeholder="Office address or site location..."
+                  placeholderTextColor="#94a3b8"
+                  style={[styles.input, { marginBottom: 12 }]}
+                />
+
+                {/* Remark */}
+                <Text style={styles.label}>Remark</Text>
+                <TextInput
+                  value={apptNotes}
+                  onChangeText={setApptNotes}
+                  placeholder="Any notes for the meeting..."
+                  placeholderTextColor="#94a3b8"
+                  multiline
+                  numberOfLines={3}
+                  style={[styles.input, styles.multilineInput, { height: 80, marginBottom: 20 }]}
+                />
+
+                {/* Footer Buttons */}
+                <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 12 }}>
+                  <TouchableOpacity
+                    style={{
+                      height: 40,
+                      paddingHorizontal: 20,
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      borderColor: '#cbd5e1',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: '#ffffff',
+                    }}
+                    onPress={() => setShowApptFixedModal(false)}>
+                    <Text style={{ color: '#1e293b', fontWeight: '700', fontSize: 14 }}>Cancel</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={{
+                      height: 40,
+                      paddingHorizontal: 20,
+                      borderRadius: 8,
+                      backgroundColor: '#2b237c',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                    onPress={handleConfirmApptFixed}>
+                    <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 14 }}>Confirm Appointment</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </KeyboardAvoidingView>
+          </View>
+        </Modal>
+
+        {/* ================= GENERATE QUOTATION OVERLAY MODAL ================= */}
+        <Modal visible={showGenQuoteModal} animationType="fade" transparent>
+          <View style={styles.modalOverlayCenter}>
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              style={[styles.modalContentCenter, { width: '100%', maxWidth: 500 }]}>
+              
+              {/* Header */}
+              <View style={[styles.modalHeader, { alignItems: 'center', justifyContent: 'space-between' }]}>
+                <Text style={[styles.modalTitle, { fontSize: 22, fontWeight: '700', color: '#1e2b48' }]}>Generate Quotation</Text>
+                <TouchableOpacity onPress={() => setShowGenQuoteModal(false)}>
+                  <X size={24} color="#475569" />
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.formContainer}>
+                
+                {/* Lead ID & Client Name Row */}
+                <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.label, { marginTop: 0 }]}>Lead ID</Text>
+                    <TextInput
+                      value={activeLead ? activeLead.id : ''}
+                      editable={false}
+                      style={[styles.input, { backgroundColor: '#f8fafc', color: '#64748b', borderColor: '#cbd5e1' }]}
+                    />
+                  </View>
+
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.label, { marginTop: 0 }]}>Client Name</Text>
+                    <TextInput
+                      value={activeLead ? activeLead.name : ''}
+                      editable={false}
+                      style={[styles.input, { backgroundColor: '#f8fafc', color: '#64748b', borderColor: '#cbd5e1' }]}
+                    />
+                  </View>
+                </View>
+
+                {/* Services Dropdown */}
+                <Text style={styles.label}>Services</Text>
+                <TouchableOpacity
+                  style={[styles.dropdownTrigger, { marginBottom: 12 }]}
+                  onPress={() => setShowQuoteServiceDropdown(!showQuoteServiceDropdown)}>
+                  <Text style={styles.dropdownTriggerText}>
+                    {quoteService || 'Select Service...'}
+                  </Text>
+                  <ChevronDown size={20} color="#64748b" />
+                </TouchableOpacity>
+                
+                {showQuoteServiceDropdown && (
+                  <View style={[styles.dropdownList, { position: 'absolute', top: 110, left: 0, right: 0, zIndex: 1000 }]}>
+                    {['PEB', 'Commercial Interior', 'Office Renovation', 'Residential Design', 'Space Planning'].map((service) => (
+                      <TouchableOpacity
+                        key={service}
+                        style={styles.dropdownItem}
+                        onPress={() => {
+                          setQuoteService(service);
+                          setShowQuoteServiceDropdown(false);
+                        }}>
+                        <Text style={styles.dropdownItemText}>{service}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+
+                {/* Amount and GST Row */}
+                <View style={{ flexDirection: 'row', gap: 12, marginBottom: 16 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.label, { marginTop: 0 }]}>Amount (ex. GST)</Text>
+                    <TextInput
+                      value={quoteAmount}
+                      onChangeText={(val) => {
+                        setQuoteAmount(val);
+                        const num = parseFloat(val.replace(/,/g, ''));
+                        if (!isNaN(num)) {
+                          setQuoteGst(Math.round(num * 0.18).toString());
+                        } else {
+                          setQuoteGst('');
+                        }
+                      }}
+                      placeholder="e.g. ₹100,000"
+                      placeholderTextColor="#94a3b8"
+                      keyboardType="numeric"
+                      style={styles.input}
+                    />
+                  </View>
+
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.label, { marginTop: 0 }]}>GST Amount</Text>
+                    <TextInput
+                      value={quoteGst}
+                      onChangeText={setQuoteGst}
+                      placeholder="e.g. ₹18,000"
+                      placeholderTextColor="#94a3b8"
+                      keyboardType="numeric"
+                      style={styles.input}
+                    />
+                  </View>
+                </View>
+
+                {/* Notes/Remark */}
+                <Text style={styles.label}>Quotation Remark</Text>
+                <TextInput
+                  value={quoteNotes}
+                  onChangeText={setQuoteNotes}
+                  placeholder="Quotation notes..."
+                  placeholderTextColor="#94a3b8"
+                  multiline
+                  numberOfLines={2}
+                  style={[styles.input, styles.multilineInput, { height: 60, marginBottom: 20 }]}
+                />
+
+                {/* Footer Buttons */}
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}>
+                  <TouchableOpacity
+                    style={{
+                      flex: 1.2,
+                      height: 40,
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      borderColor: '#2b237c',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: '#ffffff',
+                    }}
+                    onPress={() => handleConfirmQuotationSend(true)}>
+                    <Text style={{ color: '#2b237c', fontWeight: '700', fontSize: 13 }} numberOfLines={1}>Own Quotation</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={{
+                      flex: 0.8,
+                      height: 40,
+                      borderRadius: 8,
+                      borderWidth: 1,
+                      borderColor: '#cbd5e1',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: '#ffffff',
+                    }}
+                    onPress={() => setShowGenQuoteModal(false)}>
+                    <Text style={{ color: '#1e293b', fontWeight: '700', fontSize: 13 }} numberOfLines={1}>Cancel</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={{
+                      flex: 1,
+                      height: 40,
+                      borderRadius: 8,
+                      backgroundColor: '#2b237c',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                    onPress={() => handleConfirmQuotationSend(false)}>
+                    <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 13 }} numberOfLines={1}>Generate</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </KeyboardAvoidingView>
+          </View>
+        </Modal>
       </SafeAreaView>
     );
   }
@@ -1084,7 +1535,141 @@ export default function LeadsScreen() {
           </View>
           <Text style={styles.headerTitle}>Leads</Text>
         </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <TouchableOpacity style={{ padding: 6 }} onPress={() => setShowNotifications(true)}>
+            <View style={{ position: 'relative' }}>
+              <Bell size={22} color="#1e1b4b" />
+              <View style={{
+                position: 'absolute',
+                right: 0,
+                top: 0,
+                backgroundColor: '#ef4444',
+                borderRadius: 4,
+                width: 8,
+                height: 8,
+                borderWidth: 1.5,
+                borderColor: '#ffffff'
+              }} />
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.hamburgerBtn} onPress={() => setShowMenu(true)}>
+            <Menu size={24} color="#1e1b4b" />
+          </TouchableOpacity>
+        </View>
       </View>
+
+      {/* ================= HAMBURGER NAV MENU ================= */}
+      <Modal visible={showMenu} animationType="fade" transparent>
+        <TouchableOpacity 
+          style={styles.menuOverlay} 
+          activeOpacity={1} 
+          onPress={() => setShowMenu(false)}>
+          <View style={styles.menuContainer}>
+            <View style={styles.menuHeader}>
+              <Text style={styles.menuTitle}>Navigation</Text>
+              <TouchableOpacity onPress={() => setShowMenu(false)} style={styles.menuCloseBtn}>
+                <X size={18} color="#475569" />
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.menuItems}>
+              <TouchableOpacity 
+                style={[styles.menuItem, styles.menuItemActive]} 
+                onPress={() => { setShowMenu(false); }}>
+                <Users size={18} color="#4338ca" />
+                <Text style={[styles.menuItemText, styles.menuItemTextActive]}>Leads</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.menuItem} 
+                onPress={() => { setShowMenu(false); router.push('/appts'); }}>
+                <CalendarIcon size={18} color="#64748b" />
+                <Text style={styles.menuItemText}>Appointments</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.menuItem} 
+                onPress={() => { setShowMenu(false); router.push('/quotations'); }}>
+                <FileText size={18} color="#64748b" />
+                <Text style={styles.menuItemText}>Quotations</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.menuItem} 
+                onPress={() => { setShowMenu(false); Alert.alert('Project file', 'Project file details are under construction.'); }}>
+                <FolderOpen size={18} color="#64748b" />
+                <Text style={styles.menuItemText}>Project file</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.menuItem} 
+                onPress={() => { setShowMenu(false); Alert.alert('Payment Collection', 'Payment collection details are under construction.'); }}>
+                <DollarSign size={18} color="#64748b" />
+                <Text style={styles.menuItemText}>Payment Collection</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.menuItem} 
+                onPress={() => { setShowMenu(false); Alert.alert('Reports', 'Reporting dashboard is under construction.'); }}>
+                <BarChart2 size={18} color="#64748b" />
+                <Text style={styles.menuItemText}>Reports</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.menuItem} 
+                onPress={() => { setShowMenu(false); router.push('/reports'); }}>
+                <User size={18} color="#64748b" />
+                <Text style={styles.menuItemText}>Profile</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* ================= NOTIFICATIONS MODAL ================= */}
+      <Modal visible={showNotifications} animationType="fade" transparent>
+        <TouchableOpacity 
+          style={styles.menuOverlay} 
+          activeOpacity={1} 
+          onPress={() => setShowNotifications(false)}>
+          <View style={styles.notificationContainer}>
+            <View style={styles.menuHeader}>
+              <Text style={styles.menuTitle}>Notifications</Text>
+              <TouchableOpacity onPress={() => setShowNotifications(false)} style={styles.menuCloseBtn}>
+                <X size={18} color="#475569" />
+              </TouchableOpacity>
+            </View>
+            
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <View style={styles.notificationItems}>
+                <View style={[styles.notificationItem, { backgroundColor: '#f0f4ff' }]}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <Text style={styles.notificationItemTitle}>New Appointment Scheduled</Text>
+                    <View style={styles.unreadDot} />
+                  </View>
+                  <Text style={styles.notificationItemDesc}>Priya Sharma initial consultation at 04:00 PM</Text>
+                  <Text style={styles.notificationItemTime}>2 hours ago</Text>
+                </View>
+
+                <View style={[styles.notificationItem, { backgroundColor: '#f0f4ff' }]}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <Text style={styles.notificationItemTitle}>Quotation Approved</Text>
+                    <View style={styles.unreadDot} />
+                  </View>
+                  <Text style={styles.notificationItemDesc}>Quotation QT-4029 for Rahul Mehta has been approved</Text>
+                  <Text style={styles.notificationItemTime}>5 hours ago</Text>
+                </View>
+
+                <View style={styles.notificationItem}>
+                  <Text style={styles.notificationItemTitle}>Lead Assigned</Text>
+                  <Text style={styles.notificationItemDesc}>New lead Anjali Desai has been assigned to you</Text>
+                  <Text style={styles.notificationItemTime}>1 day ago</Text>
+                </View>
+              </View>
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Search and Filters buttons */}
@@ -1324,9 +1909,22 @@ export default function LeadsScreen() {
                     key={status}
                     onPress={() => {
                       if (status !== formStatus) {
-                        setPendingStatus(status);
-                        setStatusRemarkText('');
-                        setShowStatusRemarkModal(true);
+                        if (status === 'appt_fixed') {
+                          setApptDate('');
+                          setApptTime('');
+                          setApptAddress(activeLead ? activeLead.notes || '' : '');
+                          setApptNotes('');
+                          setShowApptFixedModal(true);
+                        } else if (status === 'quotation_send') {
+                          setQuoteAmount('');
+                          setQuoteGst('');
+                          setQuoteService(activeLead ? activeLead.category : 'PEB');
+                          setShowGenQuoteModal(true);
+                        } else {
+                          setPendingStatus(status);
+                          setStatusRemarkText('');
+                          setShowStatusRemarkModal(true);
+                        }
                       } else {
                         setFormStatus(status);
                       }
@@ -1656,6 +2254,271 @@ export default function LeadsScreen() {
                     setShowStatusRemarkModal(false);
                   }}>
                   <Text style={{ color: '#ffffff', fontWeight: '600' }}>Save Remark</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      {/* ================= SCHEDULE APPOINTMENT FIXED OVERLAY MODAL ================= */}
+      <Modal visible={showApptFixedModal} animationType="fade" transparent>
+        <View style={styles.modalOverlayCenter}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.modalContentCenter}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Schedule Appointment</Text>
+              <TouchableOpacity onPress={() => setShowApptFixedModal(false)}>
+                <X size={24} color="#475569" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.formContainer}>
+              
+              {/* Appointment Date and Time in Row */}
+              <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.label, { marginTop: 0 }]}>Appointment Date</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, paddingHorizontal: 12, height: 44 }}>
+                    <TextInput
+                      value={apptDate}
+                      onChangeText={setApptDate}
+                      placeholder="mm/dd/yyyy"
+                      placeholderTextColor="#94a3b8"
+                      style={{ flex: 1, height: '100%', fontSize: 14, color: '#110e3d', borderWidth: 0, outlineStyle: 'none' }}
+                    />
+                    <CalendarIcon size={16} color="#64748b" />
+                  </View>
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.label, { marginTop: 0 }]}>Meeting timing (Time)</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, paddingHorizontal: 12, height: 44 }}>
+                    <TextInput
+                      value={apptTime}
+                      onChangeText={setApptTime}
+                      placeholder="--:-- --"
+                      placeholderTextColor="#94a3b8"
+                      style={{ flex: 1, height: '100%', fontSize: 14, color: '#110e3d', borderWidth: 0, outlineStyle: 'none' }}
+                    />
+                    <Clock size={16} color="#64748b" />
+                  </View>
+                </View>
+              </View>
+
+              {/* Location / Address */}
+              <Text style={styles.label}>Location / Address</Text>
+              <TextInput
+                value={apptAddress}
+                onChangeText={setApptAddress}
+                placeholder="Office address or site location..."
+                placeholderTextColor="#94a3b8"
+                style={[styles.input, { marginBottom: 12 }]}
+              />
+
+              {/* Remark */}
+              <Text style={styles.label}>Remark</Text>
+              <TextInput
+                value={apptNotes}
+                onChangeText={setApptNotes}
+                placeholder="Any notes for the meeting..."
+                placeholderTextColor="#94a3b8"
+                multiline
+                numberOfLines={3}
+                style={[styles.input, styles.multilineInput, { height: 80, marginBottom: 20 }]}
+              />
+
+              {/* Footer Buttons */}
+              <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 12 }}>
+                <TouchableOpacity
+                  style={{
+                    height: 40,
+                    paddingHorizontal: 20,
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: '#cbd5e1',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: '#ffffff',
+                  }}
+                  onPress={() => setShowApptFixedModal(false)}>
+                  <Text style={{ color: '#1e293b', fontWeight: '700', fontSize: 14 }}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={{
+                    height: 40,
+                    paddingHorizontal: 20,
+                    borderRadius: 8,
+                    backgroundColor: '#2b237c',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                  onPress={handleConfirmApptFixed}>
+                  <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 14 }}>Confirm Appointment</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </Modal>
+
+      {/* ================= GENERATE QUOTATION OVERLAY MODAL ================= */}
+      <Modal visible={showGenQuoteModal} animationType="fade" transparent>
+        <View style={styles.modalOverlayCenter}>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={[styles.modalContentCenter, { width: '100%', maxWidth: 500 }]}>
+            
+            {/* Header */}
+            <View style={[styles.modalHeader, { alignItems: 'center', justifyContent: 'space-between' }]}>
+              <Text style={[styles.modalTitle, { fontSize: 22, fontWeight: '700', color: '#1e2b48' }]}>Generate Quotation</Text>
+              <TouchableOpacity onPress={() => setShowGenQuoteModal(false)}>
+                <X size={24} color="#475569" />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.formContainer}>
+              
+              {/* Lead ID & Client Name Row */}
+              <View style={{ flexDirection: 'row', gap: 12, marginBottom: 12 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.label, { marginTop: 0 }]}>Lead ID</Text>
+                  <TextInput
+                    value={activeLead ? activeLead.id : ''}
+                    editable={false}
+                    style={[styles.input, { backgroundColor: '#f8fafc', color: '#64748b', borderColor: '#cbd5e1' }]}
+                  />
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.label, { marginTop: 0 }]}>Client Name</Text>
+                  <TextInput
+                    value={activeLead ? activeLead.name : ''}
+                    editable={false}
+                    style={[styles.input, { backgroundColor: '#f8fafc', color: '#64748b', borderColor: '#cbd5e1' }]}
+                  />
+                </View>
+              </View>
+
+              {/* Services Dropdown */}
+              <Text style={styles.label}>Services</Text>
+              <TouchableOpacity
+                style={[styles.dropdownTrigger, { marginBottom: 12 }]}
+                onPress={() => setShowQuoteServiceDropdown(!showQuoteServiceDropdown)}>
+                <Text style={styles.dropdownTriggerText}>
+                  {quoteService || 'Select Service...'}
+                </Text>
+                <ChevronDown size={20} color="#64748b" />
+              </TouchableOpacity>
+              
+              {showQuoteServiceDropdown && (
+                <View style={[styles.dropdownList, { position: 'absolute', top: 110, left: 0, right: 0, zIndex: 1000 }]}>
+                  {['PEB', 'Commercial Interior', 'Office Renovation', 'Residential Design', 'Space Planning'].map((service) => (
+                    <TouchableOpacity
+                      key={service}
+                      style={styles.dropdownItem}
+                      onPress={() => {
+                        setQuoteService(service);
+                        setShowQuoteServiceDropdown(false);
+                      }}>
+                      <Text style={styles.dropdownItemText}>{service}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              {/* Amount and GST Row */}
+              <View style={{ flexDirection: 'row', gap: 12, marginBottom: 16 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.label, { marginTop: 0 }]}>Amount (ex. GST)</Text>
+                  <TextInput
+                    value={quoteAmount}
+                    onChangeText={(val) => {
+                      setQuoteAmount(val);
+                      const num = parseFloat(val.replace(/,/g, ''));
+                      if (!isNaN(num)) {
+                        setQuoteGst(Math.round(num * 0.18).toString());
+                      } else {
+                        setQuoteGst('');
+                      }
+                    }}
+                    placeholder="e.g. ₹100,000"
+                    placeholderTextColor="#94a3b8"
+                    keyboardType="numeric"
+                    style={styles.input}
+                  />
+                </View>
+
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.label, { marginTop: 0 }]}>GST Amount</Text>
+                  <TextInput
+                    value={quoteGst}
+                    onChangeText={setQuoteGst}
+                    placeholder="e.g. ₹18,000"
+                    placeholderTextColor="#94a3b8"
+                    keyboardType="numeric"
+                    style={styles.input}
+                  />
+                </View>
+              </View>
+
+              {/* Notes/Remark */}
+              <Text style={styles.label}>Quotation Remark</Text>
+              <TextInput
+                value={quoteNotes}
+                onChangeText={setQuoteNotes}
+                placeholder="Quotation notes..."
+                placeholderTextColor="#94a3b8"
+                multiline
+                numberOfLines={2}
+                style={[styles.input, styles.multilineInput, { height: 60, marginBottom: 20 }]}
+              />
+
+              {/* Footer Buttons */}
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}>
+                <TouchableOpacity
+                  style={{
+                    flex: 1.2,
+                    height: 40,
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: '#2b237c',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: '#ffffff',
+                  }}
+                  onPress={() => handleConfirmQuotationSend(true)}>
+                  <Text style={{ color: '#2b237c', fontWeight: '700', fontSize: 13 }} numberOfLines={1}>Own Quotation</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={{
+                    flex: 0.8,
+                    height: 40,
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: '#cbd5e1',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: '#ffffff',
+                  }}
+                  onPress={() => setShowGenQuoteModal(false)}>
+                  <Text style={{ color: '#1e293b', fontWeight: '700', fontSize: 13 }} numberOfLines={1}>Cancel</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={{
+                    flex: 1,
+                    height: 40,
+                    borderRadius: 8,
+                    backgroundColor: '#2b237c',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                  onPress={() => handleConfirmQuotationSend(false)}>
+                  <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 13 }} numberOfLines={1}>Generate</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -3074,5 +3937,121 @@ const styles = StyleSheet.create({
     color: '#110e3d',
     fontSize: 13,
     fontWeight: '600',
+  },
+  hamburgerBtn: {
+    padding: 8,
+    marginRight: -8,
+  },
+  menuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.4)',
+    justifyContent: 'flex-start',
+    alignItems: 'flex-end',
+  },
+  menuContainer: {
+    backgroundColor: '#ffffff',
+    width: 280,
+    height: '100%',
+    borderTopLeftRadius: 24,
+    borderBottomLeftRadius: 24,
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    shadowColor: '#1e1b4b',
+    shadowOffset: { width: -10, height: 0 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+  menuHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1eef6',
+    marginBottom: 16,
+  },
+  menuTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1e1b4b',
+  },
+  menuCloseBtn: {
+    padding: 4,
+  },
+  menuItems: {
+    gap: 4,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  menuItemActive: {
+    backgroundColor: '#e5e1fa',
+  },
+  menuItemText: {
+    fontSize: 14,
+    color: '#475569',
+    fontWeight: '500',
+  },
+  menuItemTextActive: {
+    color: '#4338ca',
+    fontWeight: '700',
+  },
+  notificationContainer: {
+    backgroundColor: '#ffffff',
+    width: 320,
+    height: '100%',
+    borderTopLeftRadius: 24,
+    borderBottomLeftRadius: 24,
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    shadowColor: '#1e1b4b',
+    shadowOffset: { width: -10, height: 0 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+  notificationItems: {
+    gap: 12,
+  },
+  notificationItem: {
+    backgroundColor: '#f8fafc',
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  notificationItemTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1e1b4b',
+    flex: 1,
+    marginRight: 8,
+  },
+  notificationItemDesc: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 4,
+    lineHeight: 16,
+  },
+  notificationItemTime: {
+    fontSize: 10,
+    color: '#94a3b8',
+    marginTop: 6,
+    fontWeight: '600',
+  },
+  unreadDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#ef4444',
+    marginTop: 4,
   },
 });

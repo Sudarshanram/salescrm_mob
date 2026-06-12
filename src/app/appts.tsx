@@ -13,6 +13,7 @@ import {
   Platform,
   Linking,
 } from 'react-native';
+import { router } from 'expo-router';
 import {
   Clock,
   Check,
@@ -33,6 +34,13 @@ import {
   CheckSquare,
   CheckCircle2,
   Upload,
+  Menu,
+  Users,
+  FileText,
+  FolderOpen,
+  DollarSign,
+  BarChart2,
+  Bell,
 } from 'lucide-react-native';
 import { useLeads, Appointment } from '@/context/leads-context';
 
@@ -41,7 +49,12 @@ export default function AppointmentsScreen() {
 
   // Navigation and UI state
   const [currentView, setCurrentView] = useState<'list' | 'add' | 'start-appointment'>('list');
+  const [showMenu, setShowMenu] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [showFabMenu, setShowFabMenu] = useState(false);
+  const [addType, setAddType] = useState<'appointment' | 'visit'>('appointment');
   const [activeSubTab, setActiveSubTab] = useState<'appointment' | 'visits'>('appointment');
+  const [selectedMetricsFilter, setSelectedMetricsFilter] = useState<'all' | 'visit_planned' | 'completed_appt' | 'completed_visit'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedAppt, setSelectedAppt] = useState<any | null>(null);
 
@@ -65,6 +78,11 @@ export default function AppointmentsScreen() {
   // Start Appointment Form State
   const [startLocation, setStartLocation] = useState('Main Office');
   const [startTimeText, setStartTimeText] = useState('01:07 PM');
+
+  // Address editing states for Reschedule and Start Appointment
+  const [rescheduleAddress, setRescheduleAddress] = useState('');
+  const [isEditingRescheduleAddress, setIsEditingRescheduleAddress] = useState(false);
+  const [isEditingStartLocation, setIsEditingStartLocation] = useState(false);
 
   // Local list to track appointments state dynamically
   const [localAppts, setLocalAppts] = useState<any[]>([]);
@@ -185,6 +203,43 @@ export default function AppointmentsScreen() {
     setShowLeadDropdown(false);
   };
 
+  const openAddForm = (type: 'appointment' | 'visit') => {
+    setAddType(type);
+    setSelectedLeadId('');
+    setApptNotes('');
+    setApptDate('2026-05-20, 04:00 PM');
+    setShowLeadDropdown(false);
+    if (type === 'visit') {
+      setApptTitle('Site Inspection Visit');
+    } else {
+      setApptTitle('');
+    }
+    setCurrentView('add');
+    setShowFabMenu(false);
+  };
+
+  const handleAutoDetectLocation = (callback: (loc: string) => void) => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          const detectedAddr = `Sector 24, Cyber City, Gurgaon (GPS: ${latitude.toFixed(4)}, ${longitude.toFixed(4)})`;
+          callback(detectedAddr);
+          Alert.alert('Location Detected', `Successfully auto-detected location:\n${detectedAddr}`);
+        },
+        (error) => {
+          console.log(error);
+          const fallbackAddr = "Main Office, DLF Cyber City Phase 3, Gurgaon";
+          callback(fallbackAddr);
+          Alert.alert('Location Detected', `Auto-detected location (mock fallback):\n${fallbackAddr}`);
+        },
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 10000 }
+      );
+    } else {
+      Alert.alert('Error', 'Geolocation is not supported on this device.');
+    }
+  };
+
   // Mock bases to match the screenshot (42, 18, 28, 12)
   const metrics = {
     total: appointments.length + 38,
@@ -229,13 +284,14 @@ export default function AppointmentsScreen() {
 
     resetForm();
     setCurrentView('list');
-    Alert.alert('Success', 'Appointment scheduled successfully.');
+    Alert.alert('Success', addType === 'visit' ? 'Visit scheduled successfully.' : 'Appointment scheduled successfully.');
   };
 
   const handleOpenStartAppointment = (appt: any) => {
     setSelectedAppt(appt);
     setStartLocation(appt.notes || 'Main Office');
     setStartTimeText(getCurrentTimeFormatted());
+    setIsEditingStartLocation(false);
     setCurrentView('start-appointment');
   };
 
@@ -273,7 +329,7 @@ export default function AppointmentsScreen() {
 
     const updated = localAppts.map(a => 
       a.id === reschedulingAppt.id 
-        ? { ...a, dateTime: formattedDateTime } 
+        ? { ...a, dateTime: formattedDateTime, notes: rescheduleAddress } 
         : a
     );
     setLocalAppts(updated);
@@ -327,10 +383,18 @@ export default function AppointmentsScreen() {
   // Filter list based on selected calendar range
   const getDisplayAppointments = () => {
     let filtered = localAppts;
-    if (activeSubTab === 'visits') {
-      filtered = filtered.filter(a => a.status === 'completed' || a.status === 'in_progress');
+    if (selectedMetricsFilter === 'visit_planned') {
+      filtered = filtered.filter(a => (a.title.toLowerCase().includes('visit') || a.title.toLowerCase().includes('site')) && (a.status === 'pending' || a.status === 'in_progress'));
+    } else if (selectedMetricsFilter === 'completed_appt') {
+      filtered = filtered.filter(a => a.status === 'completed');
+    } else if (selectedMetricsFilter === 'completed_visit') {
+      filtered = filtered.filter(a => a.status === 'completed');
     } else {
-      filtered = filtered.filter(a => a.status === 'pending' || a.status === 'completed');
+      if (activeSubTab === 'visits') {
+        filtered = filtered.filter(a => a.status === 'completed' || a.status === 'in_progress');
+      } else {
+        filtered = filtered.filter(a => a.status === 'pending' || a.status === 'completed');
+      }
     }
 
     if (selectedStartDate) {
@@ -375,13 +439,13 @@ export default function AppointmentsScreen() {
             <TouchableOpacity onPress={() => { resetForm(); setCurrentView('list'); }} style={styles.backBtn}>
               <ArrowLeft size={22} color="#1e1b4b" />
             </TouchableOpacity>
-            <Text style={styles.headerTitle}>Schedule Appt</Text>
+            <Text style={styles.headerTitle}>{addType === 'visit' ? 'Schedule Visit' : 'Schedule Appt'}</Text>
           </View>
         </View>
 
         <ScrollView contentContainerStyle={styles.formContainer} showsVerticalScrollIndicator={false}>
           <View style={styles.formSection}>
-            <Text style={styles.formSectionTitle}>Appointment Information</Text>
+            <Text style={styles.formSectionTitle}>{addType === 'visit' ? 'Visit Information' : 'Appointment Information'}</Text>
 
             {/* Select Lead Dropdown */}
             <Text style={styles.label}>Select Customer / Lead *</Text>
@@ -414,12 +478,12 @@ export default function AppointmentsScreen() {
               </View>
             )}
 
-            <Text style={styles.label}>Appointment Title *</Text>
+            <Text style={styles.label}>{addType === 'visit' ? 'Visit Title *' : 'Appointment Title *'}</Text>
             <TextInput
               style={styles.input}
               value={apptTitle}
               onChangeText={setApptTitle}
-              placeholder="e.g. Initial Consultation"
+              placeholder={addType === 'visit' ? "e.g. Site Inspection Visit" : "e.g. Initial Consultation"}
               placeholderTextColor="#94a3b8"
             />
 
@@ -452,7 +516,7 @@ export default function AppointmentsScreen() {
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.submitBtnFilled} onPress={handleCreateAppointment}>
-              <Text style={styles.submitBtnText}>Save Appointment</Text>
+              <Text style={styles.submitBtnText}>{addType === 'visit' ? 'Save Visit' : 'Save Appointment'}</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -470,10 +534,144 @@ export default function AppointmentsScreen() {
           </View>
           <Text style={styles.headerTitle}>Appointments</Text>
         </View>
-        <TouchableOpacity style={styles.searchIconBtn}>
-          <Search size={22} color="#1e1b4b" />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <TouchableOpacity style={styles.searchIconBtn}>
+            <Search size={22} color="#1e1b4b" />
+          </TouchableOpacity>
+          <TouchableOpacity style={{ padding: 6 }} onPress={() => setShowNotifications(true)}>
+            <View style={{ position: 'relative' }}>
+              <Bell size={22} color="#1e1b4b" />
+              <View style={{
+                position: 'absolute',
+                right: 0,
+                top: 0,
+                backgroundColor: '#ef4444',
+                borderRadius: 4,
+                width: 8,
+                height: 8,
+                borderWidth: 1.5,
+                borderColor: '#ffffff'
+              }} />
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.hamburgerBtn} onPress={() => setShowMenu(true)}>
+            <Menu size={24} color="#1e1b4b" />
+          </TouchableOpacity>
+        </View>
       </View>
+
+      {/* ================= HAMBURGER NAV MENU ================= */}
+      <Modal visible={showMenu} animationType="fade" transparent>
+        <TouchableOpacity 
+          style={styles.menuOverlay} 
+          activeOpacity={1} 
+          onPress={() => setShowMenu(false)}>
+          <View style={styles.menuContainer}>
+            <View style={styles.menuHeader}>
+              <Text style={styles.menuTitle}>Navigation</Text>
+              <TouchableOpacity onPress={() => setShowMenu(false)} style={styles.menuCloseBtn}>
+                <X size={18} color="#475569" />
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.menuItems}>
+              <TouchableOpacity 
+                style={styles.menuItem} 
+                onPress={() => { setShowMenu(false); router.push('/'); }}>
+                <Users size={18} color="#64748b" />
+                <Text style={styles.menuItemText}>Leads</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[styles.menuItem, styles.menuItemActive]} 
+                onPress={() => { setShowMenu(false); }}>
+                <CalendarIcon size={18} color="#4338ca" />
+                <Text style={[styles.menuItemText, styles.menuItemTextActive]}>Appointments</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.menuItem} 
+                onPress={() => { setShowMenu(false); router.push('/quotations'); }}>
+                <FileText size={18} color="#64748b" />
+                <Text style={styles.menuItemText}>Quotations</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.menuItem} 
+                onPress={() => { setShowMenu(false); Alert.alert('Project file', 'Project file details are under construction.'); }}>
+                <FolderOpen size={18} color="#64748b" />
+                <Text style={styles.menuItemText}>Project file</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.menuItem} 
+                onPress={() => { setShowMenu(false); Alert.alert('Payment Collection', 'Payment collection details are under construction.'); }}>
+                <DollarSign size={18} color="#64748b" />
+                <Text style={styles.menuItemText}>Payment Collection</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.menuItem} 
+                onPress={() => { setShowMenu(false); Alert.alert('Reports', 'Reporting dashboard is under construction.'); }}>
+                <BarChart2 size={18} color="#64748b" />
+                <Text style={styles.menuItemText}>Reports</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.menuItem} 
+                onPress={() => { setShowMenu(false); router.push('/reports'); }}>
+                <User size={18} color="#64748b" />
+                <Text style={styles.menuItemText}>Profile</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* ================= NOTIFICATIONS MODAL ================= */}
+      <Modal visible={showNotifications} animationType="fade" transparent>
+        <TouchableOpacity 
+          style={styles.menuOverlay} 
+          activeOpacity={1} 
+          onPress={() => setShowNotifications(false)}>
+          <View style={styles.notificationContainer}>
+            <View style={styles.menuHeader}>
+              <Text style={styles.menuTitle}>Notifications</Text>
+              <TouchableOpacity onPress={() => setShowNotifications(false)} style={styles.menuCloseBtn}>
+                <X size={18} color="#475569" />
+              </TouchableOpacity>
+            </View>
+            
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <View style={styles.notificationItems}>
+                <View style={[styles.notificationItem, { backgroundColor: '#f0f4ff' }]}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <Text style={styles.notificationItemTitle}>New Appointment Scheduled</Text>
+                    <View style={styles.unreadDot} />
+                  </View>
+                  <Text style={styles.notificationItemDesc}>Priya Sharma initial consultation at 04:00 PM</Text>
+                  <Text style={styles.notificationItemTime}>2 hours ago</Text>
+                </View>
+
+                <View style={[styles.notificationItem, { backgroundColor: '#f0f4ff' }]}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <Text style={styles.notificationItemTitle}>Quotation Approved</Text>
+                    <View style={styles.unreadDot} />
+                  </View>
+                  <Text style={styles.notificationItemDesc}>Quotation QT-4029 for Rahul Mehta has been approved</Text>
+                  <Text style={styles.notificationItemTime}>5 hours ago</Text>
+                </View>
+
+                <View style={styles.notificationItem}>
+                  <Text style={styles.notificationItemTitle}>Lead Assigned</Text>
+                  <Text style={styles.notificationItemDesc}>New lead Anjali Desai has been assigned to you</Text>
+                  <Text style={styles.notificationItemTime}>1 day ago</Text>
+                </View>
+              </View>
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
 
@@ -482,44 +680,92 @@ export default function AppointmentsScreen() {
           <View style={styles.metricsGrid}>
             
             {/* Card 1: Total Appointments */}
-            <View style={[styles.metricCard, { backgroundColor: '#f0f4ff', borderColor: '#c7d2fe' }]}>
+            <TouchableOpacity 
+              onPress={() => {
+                setActiveSubTab('appointment');
+                setSelectedMetricsFilter('all');
+              }}
+              style={[
+                styles.metricCard, 
+                { 
+                  backgroundColor: '#f0f4ff', 
+                  borderColor: selectedMetricsFilter === 'all' && activeSubTab === 'appointment' ? '#4f46e5' : '#c7d2fe',
+                  borderWidth: selectedMetricsFilter === 'all' && activeSubTab === 'appointment' ? 2 : 1 
+                }
+              ]}>
               <View style={styles.metricCardHeader}>
                 <Text style={styles.metricCardLabel}>Total{"\n"}Appointment</Text>
                 <CalendarIcon size={20} color="#4f46e5" />
               </View>
               <Text style={styles.metricCardValue}>{metrics.total}</Text>
               <Text style={styles.metricCardSubText}>Scheduled this month</Text>
-            </View>
+            </TouchableOpacity>
 
             {/* Card 2: Total Visit Planned */}
-            <View style={[styles.metricCard, { backgroundColor: '#faf5ff', borderColor: '#e9d5ff' }]}>
+            <TouchableOpacity 
+              onPress={() => {
+                setActiveSubTab('visits');
+                setSelectedMetricsFilter('visit_planned');
+              }}
+              style={[
+                styles.metricCard, 
+                { 
+                  backgroundColor: '#faf5ff', 
+                  borderColor: selectedMetricsFilter === 'visit_planned' ? '#9333ea' : '#e9d5ff',
+                  borderWidth: selectedMetricsFilter === 'visit_planned' ? 2 : 1 
+                }
+              ]}>
               <View style={styles.metricCardHeader}>
                 <Text style={styles.metricCardLabel}>Total visit{"\n"}planned</Text>
                 <MapPin size={20} color="#9333ea" />
               </View>
               <Text style={styles.metricCardValue}>{metrics.visitPlanned}</Text>
               <Text style={styles.metricCardSubText}>Planned site visits</Text>
-            </View>
+            </TouchableOpacity>
 
             {/* Card 3: Completed Appointments */}
-            <View style={[styles.metricCard, { backgroundColor: '#ecfdf5', borderColor: '#a7f3d0' }]}>
+            <TouchableOpacity 
+              onPress={() => {
+                setActiveSubTab('appointment');
+                setSelectedMetricsFilter('completed_appt');
+              }}
+              style={[
+                styles.metricCard, 
+                { 
+                  backgroundColor: '#ecfdf5', 
+                  borderColor: selectedMetricsFilter === 'completed_appt' ? '#10b981' : '#a7f3d0',
+                  borderWidth: selectedMetricsFilter === 'completed_appt' ? 2 : 1 
+                }
+              ]}>
               <View style={styles.metricCardHeader}>
                 <Text style={styles.metricCardLabel}>Completed{"\n"}Appointment</Text>
                 <CheckCircle2 size={20} color="#10b981" />
               </View>
               <Text style={styles.metricCardValue}>{metrics.completed}</Text>
               <Text style={[styles.metricCardSubText, { color: '#059669', fontWeight: '700' }]}>+5 Completed Today</Text>
-            </View>
+            </TouchableOpacity>
 
             {/* Card 4: Total Visits Completed */}
-            <View style={[styles.metricCard, { backgroundColor: '#fffbeb', borderColor: '#fed7aa' }]}>
+            <TouchableOpacity 
+              onPress={() => {
+                setActiveSubTab('visits');
+                setSelectedMetricsFilter('completed_visit');
+              }}
+              style={[
+                styles.metricCard, 
+                { 
+                  backgroundColor: '#fffbeb', 
+                  borderColor: selectedMetricsFilter === 'completed_visit' ? '#f97316' : '#fed7aa',
+                  borderWidth: selectedMetricsFilter === 'completed_visit' ? 2 : 1 
+                }
+              ]}>
               <View style={styles.metricCardHeader}>
                 <Text style={styles.metricCardLabel}>Total Visit{"\n"}completed</Text>
                 <CheckCircle2 size={20} color="#f97316" />
               </View>
               <Text style={styles.metricCardValue}>{metrics.completedWeek}</Text>
               <Text style={styles.metricCardSubText}>Done this week</Text>
-            </View>
+            </TouchableOpacity>
 
           </View>
         </View>
@@ -625,14 +871,20 @@ export default function AppointmentsScreen() {
         <View style={styles.tabBar}>
           <TouchableOpacity
             style={[styles.tabItem, activeSubTab === 'appointment' && styles.tabItemActive]}
-            onPress={() => setActiveSubTab('appointment')}>
+            onPress={() => {
+              setActiveSubTab('appointment');
+              setSelectedMetricsFilter('all');
+            }}>
             <Text style={[styles.tabText, activeSubTab === 'appointment' && styles.tabTextActive]}>
               Appointment
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.tabItem, activeSubTab === 'visits' && styles.tabItemActive]}
-            onPress={() => setActiveSubTab('visits')}>
+            onPress={() => {
+              setActiveSubTab('visits');
+              setSelectedMetricsFilter('all');
+            }}>
             <Text style={[styles.tabText, activeSubTab === 'visits' && styles.tabTextActive]}>
               Visits
             </Text>
@@ -773,6 +1025,8 @@ export default function AppointmentsScreen() {
                           setRescheduleStartTime(timeSubparts[0] || '02:00 PM');
                           setRescheduleEndTime(timeSubparts[1] || '03:30 PM');
 
+                          setRescheduleAddress(appt.notes || '');
+                          setIsEditingRescheduleAddress(false);
                           setShowRescheduleModal(true);
                         }}>
                         <Text style={styles.rescheduleBtnText}>Reschedule</Text>
@@ -797,9 +1051,59 @@ export default function AppointmentsScreen() {
       </ScrollView>
 
       {/* Floating Action Button */}
-      <TouchableOpacity style={styles.fab} onPress={() => setCurrentView('add')}>
-        <Plus size={26} color="#ffffff" />
-      </TouchableOpacity>
+      {!showFabMenu && (
+        <TouchableOpacity style={styles.fab} onPress={() => setShowFabMenu(true)}>
+          <Plus size={26} color="#ffffff" />
+        </TouchableOpacity>
+      )}
+
+      {/* ================= FAB MENU OVERLAY ================= */}
+      {showFabMenu && (
+        <TouchableOpacity 
+          style={styles.fabMenuOverlayAbsolute} 
+          activeOpacity={1} 
+          onPress={() => setShowFabMenu(false)}>
+          
+          <View style={styles.fabMenuContainerAbsolute}>
+            <TouchableOpacity 
+              style={[styles.fabMenuItem, { marginRight: 8 }]} 
+              onPress={() => openAddForm('appointment')}>
+              <Text style={styles.fabMenuText}>Appointment</Text>
+              <View style={[styles.miniFab, { backgroundColor: '#4f46e5' }]}>
+                <CalendarIcon size={16} color="#ffffff" />
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.fabMenuItem, { marginRight: 8 }]} 
+              onPress={() => openAddForm('visit')}>
+              <Text style={styles.fabMenuText}>Visit</Text>
+              <View style={[styles.miniFab, { backgroundColor: '#9333ea' }]}>
+                <MapPin size={16} color="#ffffff" />
+              </View>
+            </TouchableOpacity>
+            
+            <TouchableOpacity 
+              style={{
+                backgroundColor: '#110e3d',
+                width: 56,
+                height: 56,
+                borderRadius: 28,
+                alignItems: 'center',
+                justifyContent: 'center',
+                elevation: 8,
+                shadowColor: '#110e3d',
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.3,
+                shadowRadius: 6,
+                marginTop: 12,
+              }} 
+              onPress={() => setShowFabMenu(false)}>
+              <X size={26} color="#ffffff" />
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      )}
 
       {/* ================= RESCHEDULE VISIT MODAL ================= */}
       <Modal visible={showRescheduleModal} animationType="fade" transparent>
@@ -856,6 +1160,36 @@ export default function AppointmentsScreen() {
                 </View>
               </View>
 
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <Text style={styles.modalLabel}>Address</Text>
+                {!isEditingRescheduleAddress && (
+                  <TouchableOpacity 
+                    style={{ backgroundColor: '#e5e1fa', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 }}
+                    onPress={() => {
+                      setIsEditingRescheduleAddress(true);
+                      handleAutoDetectLocation((addr) => setRescheduleAddress(addr));
+                    }}>
+                    <Text style={{ fontSize: 11, color: '#4338ca', fontWeight: '700' }}>Change Address</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              {isEditingRescheduleAddress ? (
+                <TextInput
+                  value={rescheduleAddress}
+                  onChangeText={setRescheduleAddress}
+                  placeholder="Enter address..."
+                  placeholderTextColor="#94a3b8"
+                  style={[styles.modalInput, { marginBottom: 12 }]}
+                  autoFocus
+                />
+              ) : (
+                <TextInput
+                  value={rescheduleAddress || 'No address set'}
+                  style={[styles.modalInput, { backgroundColor: '#f8fafc', color: '#64748b', marginBottom: 12 }]}
+                  editable={false}
+                />
+              )}
+
               <View style={styles.modalFooterActions}>
                 <TouchableOpacity
                   style={styles.modalCancelBtn}
@@ -893,14 +1227,35 @@ export default function AppointmentsScreen() {
 
             {/* Field 1: GOOGLE LOCATION */}
             <View style={styles.startApptField}>
-              <Text style={styles.startApptLabel}>GOOGLE LOCATION URL / ADDRESS</Text>
-              <TextInput
-                style={styles.startApptInput}
-                value={startLocation}
-                onChangeText={setStartLocation}
-                placeholder="Google Location Address"
-                placeholderTextColor="#94a3b8"
-              />
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <Text style={styles.startApptLabel}>GOOGLE LOCATION URL / ADDRESS</Text>
+                {!isEditingStartLocation && (
+                  <TouchableOpacity 
+                    style={{ backgroundColor: '#e5e1fa', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6 }}
+                    onPress={() => {
+                      setIsEditingStartLocation(true);
+                      handleAutoDetectLocation((addr) => setStartLocation(addr));
+                    }}>
+                    <Text style={{ fontSize: 11, color: '#4338ca', fontWeight: '700' }}>Change Address</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              {isEditingStartLocation ? (
+                <TextInput
+                  style={styles.startApptInput}
+                  value={startLocation}
+                  onChangeText={setStartLocation}
+                  placeholder="Enter Google Location Address"
+                  placeholderTextColor="#94a3b8"
+                  autoFocus
+                />
+              ) : (
+                <TextInput
+                  style={[styles.startApptInput, { backgroundColor: '#f8fafc', color: '#64748b' }]}
+                  value={startLocation || 'No location set'}
+                  editable={false}
+                />
+              )}
             </View>
 
             {/* Field 2: START TIME */}
@@ -1899,5 +2254,172 @@ const styles = StyleSheet.create({
     marginTop: 6,
     lineHeight: 14,
     fontWeight: '500',
+  },
+  hamburgerBtn: {
+    padding: 8,
+    marginRight: -8,
+  },
+  menuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.4)',
+    justifyContent: 'flex-start',
+    alignItems: 'flex-end',
+  },
+  menuContainer: {
+    backgroundColor: '#ffffff',
+    width: 280,
+    height: '100%',
+    borderTopLeftRadius: 24,
+    borderBottomLeftRadius: 24,
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    shadowColor: '#1e1b4b',
+    shadowOffset: { width: -10, height: 0 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+  menuHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1eef6',
+    marginBottom: 16,
+  },
+  menuTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1e1b4b',
+  },
+  menuCloseBtn: {
+    padding: 4,
+  },
+  menuItems: {
+    gap: 4,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  menuItemActive: {
+    backgroundColor: '#e5e1fa',
+  },
+  menuItemText: {
+    fontSize: 14,
+    color: '#475569',
+    fontWeight: '500',
+  },
+  menuItemTextActive: {
+    color: '#4338ca',
+    fontWeight: '700',
+  },
+  notificationContainer: {
+    backgroundColor: '#ffffff',
+    width: 320,
+    height: '100%',
+    borderTopLeftRadius: 24,
+    borderBottomLeftRadius: 24,
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    shadowColor: '#1e1b4b',
+    shadowOffset: { width: -10, height: 0 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+  notificationItems: {
+    gap: 12,
+  },
+  notificationItem: {
+    backgroundColor: '#f8fafc',
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  notificationItemTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1e1b4b',
+    flex: 1,
+    marginRight: 8,
+  },
+  notificationItemDesc: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 4,
+    lineHeight: 16,
+  },
+  notificationItemTime: {
+    fontSize: 10,
+    color: '#94a3b8',
+    marginTop: 6,
+    fontWeight: '600',
+  },
+  unreadDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#ef4444',
+    marginTop: 4,
+  },
+  fabMenuOverlayAbsolute: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(15, 23, 42, 0.4)',
+    zIndex: 98,
+    justifyContent: 'flex-end',
+    alignItems: 'flex-end',
+    paddingRight: 20,
+    paddingBottom: 84,
+  },
+  fabMenuContainerAbsolute: {
+    alignItems: 'flex-end',
+    gap: 12,
+    zIndex: 99,
+  },
+  fabMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  fabMenuText: {
+    backgroundColor: '#ffffff',
+    color: '#1e1b4b',
+    fontWeight: '700',
+    fontSize: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    shadowColor: '#1e1b4b',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  miniFab: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#1e1b4b',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 4,
   },
 });

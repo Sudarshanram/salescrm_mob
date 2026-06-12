@@ -9,14 +9,18 @@ import {
   TextInput,
   Alert,
   SafeAreaView,
+  Platform,
 } from 'react-native';
-import { Plus, X, AlertCircle, DollarSign, ChevronLeft, ChevronRight, SlidersHorizontal, Search, Calendar as CalendarIcon, Download, Upload, Clock, FileText, CheckCircle } from 'lucide-react-native';
+import { router } from 'expo-router';
+import { Plus, X, AlertCircle, DollarSign, ChevronLeft, ChevronRight, SlidersHorizontal, Search, Calendar as CalendarIcon, Download, Upload, Clock, FileText, CheckCircle, Menu, Users, User, FolderOpen, BarChart2, Bell } from 'lucide-react-native';
 import { useLeads } from '@/context/leads-context';
 
 export default function QuotationsScreen() {
   const { leads, quotations, addQuotation, updateQuotationStatus } = useLeads();
 
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
 
   // Form states
   const [selectedLeadId, setSelectedLeadId] = useState('');
@@ -155,10 +159,144 @@ export default function QuotationsScreen() {
           </View>
           <Text style={styles.headerTitle}>Quotations</Text>
         </View>
-        <TouchableOpacity style={styles.searchIconBtn}>
-          <Search size={22} color="#1e1b4b" />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <TouchableOpacity style={styles.searchIconBtn}>
+            <Search size={22} color="#1e1b4b" />
+          </TouchableOpacity>
+          <TouchableOpacity style={{ padding: 6 }} onPress={() => setShowNotifications(true)}>
+            <View style={{ position: 'relative' }}>
+              <Bell size={22} color="#1e1b4b" />
+              <View style={{
+                position: 'absolute',
+                right: 0,
+                top: 0,
+                backgroundColor: '#ef4444',
+                borderRadius: 4,
+                width: 8,
+                height: 8,
+                borderWidth: 1.5,
+                borderColor: '#ffffff'
+              }} />
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.hamburgerBtn} onPress={() => setShowMenu(true)}>
+            <Menu size={24} color="#1e1b4b" />
+          </TouchableOpacity>
+        </View>
       </View>
+
+      {/* ================= HAMBURGER NAV MENU ================= */}
+      <Modal visible={showMenu} animationType="fade" transparent>
+        <TouchableOpacity 
+          style={styles.menuOverlay} 
+          activeOpacity={1} 
+          onPress={() => setShowMenu(false)}>
+          <View style={styles.menuContainer}>
+            <View style={styles.menuHeader}>
+              <Text style={styles.menuTitle}>Navigation</Text>
+              <TouchableOpacity onPress={() => setShowMenu(false)} style={styles.menuCloseBtn}>
+                <X size={18} color="#475569" />
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.menuItems}>
+              <TouchableOpacity 
+                style={styles.menuItem} 
+                onPress={() => { setShowMenu(false); router.push('/'); }}>
+                <Users size={18} color="#64748b" />
+                <Text style={styles.menuItemText}>Leads</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.menuItem} 
+                onPress={() => { setShowMenu(false); router.push('/appts'); }}>
+                <CalendarIcon size={18} color="#64748b" />
+                <Text style={styles.menuItemText}>Appointments</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={[styles.menuItem, styles.menuItemActive]} 
+                onPress={() => { setShowMenu(false); }}>
+                <FileText size={18} color="#4338ca" />
+                <Text style={[styles.menuItemText, styles.menuItemTextActive]}>Quotations</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.menuItem} 
+                onPress={() => { setShowMenu(false); Alert.alert('Project file', 'Project file details are under construction.'); }}>
+                <FolderOpen size={18} color="#64748b" />
+                <Text style={styles.menuItemText}>Project file</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.menuItem} 
+                onPress={() => { setShowMenu(false); Alert.alert('Payment Collection', 'Payment collection details are under construction.'); }}>
+                <DollarSign size={18} color="#64748b" />
+                <Text style={styles.menuItemText}>Payment Collection</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.menuItem} 
+                onPress={() => { setShowMenu(false); Alert.alert('Reports', 'Reporting dashboard is under construction.'); }}>
+                <BarChart2 size={18} color="#64748b" />
+                <Text style={styles.menuItemText}>Reports</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.menuItem} 
+                onPress={() => { setShowMenu(false); router.push('/reports'); }}>
+                <User size={18} color="#64748b" />
+                <Text style={styles.menuItemText}>Profile</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* ================= NOTIFICATIONS MODAL ================= */}
+      <Modal visible={showNotifications} animationType="fade" transparent>
+        <TouchableOpacity 
+          style={styles.menuOverlay} 
+          activeOpacity={1} 
+          onPress={() => setShowNotifications(false)}>
+          <View style={styles.notificationContainer}>
+            <View style={styles.menuHeader}>
+              <Text style={styles.menuTitle}>Notifications</Text>
+              <TouchableOpacity onPress={() => setShowNotifications(false)} style={styles.menuCloseBtn}>
+                <X size={18} color="#475569" />
+              </TouchableOpacity>
+            </View>
+            
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <View style={styles.notificationItems}>
+                <View style={[styles.notificationItem, { backgroundColor: '#f0f4ff' }]}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <Text style={styles.notificationItemTitle}>New Appointment Scheduled</Text>
+                    <View style={styles.unreadDot} />
+                  </View>
+                  <Text style={styles.notificationItemDesc}>Priya Sharma initial consultation at 04:00 PM</Text>
+                  <Text style={styles.notificationItemTime}>2 hours ago</Text>
+                </View>
+
+                <View style={[styles.notificationItem, { backgroundColor: '#f0f4ff' }]}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <Text style={styles.notificationItemTitle}>Quotation Approved</Text>
+                    <View style={styles.unreadDot} />
+                  </View>
+                  <Text style={styles.notificationItemDesc}>Quotation QT-4029 for Rahul Mehta has been approved</Text>
+                  <Text style={styles.notificationItemTime}>5 hours ago</Text>
+                </View>
+
+                <View style={styles.notificationItem}>
+                  <Text style={styles.notificationItemTitle}>Lead Assigned</Text>
+                  <Text style={styles.notificationItemDesc}>New lead Anjali Desai has been assigned to you</Text>
+                  <Text style={styles.notificationItemTime}>1 day ago</Text>
+                </View>
+              </View>
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Metrics Section */}
@@ -967,5 +1105,120 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#ffffff',
     fontWeight: 'bold',
+  },
+  hamburgerBtn: {
+    padding: 8,
+  },
+  menuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.4)',
+    justifyContent: 'flex-start',
+    alignItems: 'flex-end',
+  },
+  menuContainer: {
+    backgroundColor: '#ffffff',
+    width: 280,
+    height: '100%',
+    borderTopLeftRadius: 24,
+    borderBottomLeftRadius: 24,
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    shadowColor: '#1e1b4b',
+    shadowOffset: { width: -10, height: 0 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+  menuHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1eef6',
+    marginBottom: 16,
+  },
+  menuTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#1e1b4b',
+  },
+  menuCloseBtn: {
+    padding: 4,
+  },
+  menuItems: {
+    gap: 4,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  menuItemActive: {
+    backgroundColor: '#e5e1fa',
+  },
+  menuItemText: {
+    fontSize: 14,
+    color: '#475569',
+    fontWeight: '500',
+  },
+  menuItemTextActive: {
+    color: '#4338ca',
+    fontWeight: '700',
+  },
+  notificationContainer: {
+    backgroundColor: '#ffffff',
+    width: 320,
+    height: '100%',
+    borderTopLeftRadius: 24,
+    borderBottomLeftRadius: 24,
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    shadowColor: '#1e1b4b',
+    shadowOffset: { width: -10, height: 0 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+  notificationItems: {
+    gap: 12,
+  },
+  notificationItem: {
+    backgroundColor: '#f8fafc',
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  notificationItemTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1e1b4b',
+    flex: 1,
+    marginRight: 8,
+  },
+  notificationItemDesc: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 4,
+    lineHeight: 16,
+  },
+  notificationItemTime: {
+    fontSize: 10,
+    color: '#94a3b8',
+    marginTop: 6,
+    fontWeight: '600',
+  },
+  unreadDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#ef4444',
+    marginTop: 4,
   },
 });
